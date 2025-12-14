@@ -13,6 +13,7 @@ const App: React.FC = () => {
   const [events, setEvents] = useState<OrigamiSlot[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorHint, setErrorHint] = useState<string | null>(null);
 
   // 1. Fetch Templates once on mount
   useEffect(() => {
@@ -45,6 +46,7 @@ const App: React.FC = () => {
   const fetchTemplates = async () => {
     setLoading(true);
     setError(null);
+    setErrorHint(null);
     try {
       const response = await fetch('/api/proxy', {
         method: 'POST',
@@ -56,8 +58,14 @@ const App: React.FC = () => {
       });
 
       if (!response.ok) {
-         const txt = await response.text();
-         throw new Error(`API Error ${response.status}: ${txt}`);
+         const errorData = await response.json().catch(() => ({}));
+         const errorMsg = errorData.error?.message || errorData.error || `API Error ${response.status}`;
+         
+         if (errorData.error?.hint) {
+             setErrorHint(errorData.error.hint);
+         }
+         
+         throw new Error(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
       }
       
       const rawData = await response.json();
@@ -138,7 +146,8 @@ const App: React.FC = () => {
 
         {error && (
             <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-4 border border-red-200 text-right">
-                <strong>שגיאה בטעינת הנתונים:</strong> {error}
+                <p><strong>שגיאה בטעינת הנתונים:</strong> {error}</p>
+                {errorHint && <p className="text-sm mt-2 opacity-80" dir="ltr">{errorHint}</p>}
             </div>
         )}
 
