@@ -17,9 +17,9 @@ export default async function handler(request: Request) {
     const origamiApiUrl = 'https://mganim.origami.ms/entities/api/instance_data/format/json';
     
     // Credentials: Use Env vars if available, otherwise use the hardcoded token provided by the user
-    // Updated with the new token provided
     const origamiUsername = process.env.ORIGAMI_USERNAME || 'api'; 
-    const origamiApiSecret = process.env.ORIGAMI_API_SECRET || process.env.ORIGAMI_API_KEY || 'OGMI-NjkZZTczMJDKNJG-0MjCtNTM5NzI2OD-c4MjAwOTUxNJY5M-2U3MzI3ZDY4NDkZ-LTC3NDQzMjcw';
+    // Updated with the new token
+    const origamiApiSecret = process.env.ORIGAMI_API_SECRET || process.env.ORIGAMI_API_KEY || 'OGMI-NJKzZTViMmNLYTB-KMTctMZI5MzQ5OT-E0MDMWNzU5NJY5M-2U1YJJJZWEwZDYY-LTA0NDY2NTkZ';
 
     if (!origamiApiSecret) {
       console.error('Origami API credentials are not set.');
@@ -47,7 +47,15 @@ export default async function handler(request: Request) {
     if (!origamiResponse.ok) {
         const errorText = await origamiResponse.text();
         console.error(`Origami API error: ${origamiResponse.status}`, errorText);
-        return new Response(JSON.stringify({ error: `Origami Error: ${origamiResponse.status}` }), {
+        // Try to parse error text as JSON to return a cleaner object if possible
+        let errorJson;
+        try {
+            errorJson = JSON.parse(errorText);
+        } catch (e) {
+            errorJson = { message: errorText };
+        }
+
+        return new Response(JSON.stringify({ error: errorJson }), {
             status: origamiResponse.status,
             headers: { 'Content-Type': 'application/json' },
         });

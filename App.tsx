@@ -64,9 +64,11 @@ const App: React.FC = () => {
       
       if (rawData.error) {
           // Handle object errors safely
-          const msg = typeof rawData.error === 'object' 
-            ? JSON.stringify(rawData.error) 
-            : rawData.error;
+          let msg = rawData.error;
+          if (typeof rawData.error === 'object') {
+              // Prefer 'message' field from Origami error objects
+              msg = rawData.error.message || JSON.stringify(rawData.error);
+          }
           throw new Error(msg);
       }
       
