@@ -13,15 +13,16 @@ export default async function handler(request: Request) {
   try {
     const clientRequestBody = await request.json();
 
-    // Use the Origami Endpoint from your previous configuration
+    // Use the Origami Endpoint
     const origamiApiUrl = 'https://mganim.origami.ms/entities/api/instance_data/format/json';
     
-    // Credentials from Environment Variables
-    const origamiUsername = process.env.ORIGAMI_USERNAME || 'api'; // Default fallback
-    const origamiApiSecret = process.env.ORIGAMI_API_SECRET;
+    // Credentials: Use Env vars if available, otherwise use the hardcoded token provided by the user
+    // Updated with the new token provided
+    const origamiUsername = process.env.ORIGAMI_USERNAME || 'api'; 
+    const origamiApiSecret = process.env.ORIGAMI_API_SECRET || process.env.ORIGAMI_API_KEY || 'OGMI-NjkZZTczMJDKNJG-0MjCtNTM5NzI2OD-c4MjAwOTUxNJY5M-2U3MzI3ZDY4NDkZ-LTC3NDQzMjcw';
 
     if (!origamiApiSecret) {
-      console.error('Origami API credentials are not set on the server.');
+      console.error('Origami API credentials are not set.');
       return new Response(JSON.stringify({ error: 'Server configuration error: Missing Secrets.' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
@@ -58,7 +59,7 @@ export default async function handler(request: Request) {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'no-store, max-age=0', // Live data, do not cache heavily
+        'Cache-Control': 'no-store, max-age=0',
       },
     });
 

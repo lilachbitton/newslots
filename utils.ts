@@ -2,71 +2,122 @@ import { OrigamiSlot } from './types';
 
 // Constants for Origami Fields
 export const ORIGAMI_CONFIG = {
-  dataName: 'e_90',
+  dataName: 'e_90',    // The main entity
+  groupName: 'g_256',  // The field group from your screenshot
   fields: {
-    start: 'fld_1544',
-    end: 'fld_1545',
+    start: 'fld_1544', // Start time
+    end: 'fld_1545',   // End time
   }
 };
 
 /**
  * Parses raw Origami data into structured slots.
- * Assumes Origami returns Unix timestamps (seconds or milliseconds) or ISO strings.
+ * Handles:
+ * 1. Flat structure (fields on root)
+ * 2. Nested Groups (fields inside g_256)
+ * 3. Repeating Groups (g_256 is an array of slots)
  */
-export const parseOrigamiData = (data: any[]): OrigamiSlot[] => {
-  if (!Array.isArray(data)) return [];
+export const parseOrigamiData = (data: any): OrigamiSlot[] => {
+  let list = data;
 
-  return data.map((item) => {
-    // Helper to find field value deeply nested or flat
-    const findField = (fieldName: string): any => {
-      // 1. Try flat
-      if (item[fieldName]) return item[fieldName];
-      
-      // 2. Try inside groups (g_...)
-      const keys = Object.keys(item);
-      for (const key of keys) {
+  // Handle common Origami response wrappers where data is inside "instanceList"
+  if (!Array.isArray(data) && data && Array.isArray(data.instanceList)) {
+      list = data.instanceList;
+  }
+
+  if (!Array.isArray(list)) return [];
+
+  const slots: OrigamiSlot[] = [];
+
+  list.forEach((item) => {
+    // 1. Try to find the specific group defined in config
+    const groupData = item[ORIGAMI_CONFIG.groupName];
+
+    // Helper to process a single data object (row) and extract time
+    const processRow = (row: any, parentItem: any): OrigamiSlot | null => {
+        const rawStart = row[ORIGAMI_CONFIG.fields.start];
+        const rawEnd = row[ORIGAMI_CONFIG.fields.end];
+
+        if (!rawStart || !rawEnd) return null;
+
+        const startTime = parseTime(rawStart);
+        const endTime = parseTime(rawEnd);
+
+        if (startTime === 0 || endTime === 0) return null;
+
+        return {
+          id: row._id || row.id || Math.random().toString(36).substr(2, 9),
+          startTime,
+          endTime,
+          title: row.title || 'פגישה', // You might want to map a specific title field later
+          originalData: { ...parentItem, _groupRow: row }
+        };
+    };
+
+    // Case A: The group is a Repeating Group (Array) - Multiple slots per item
+    if (Array.isArray(groupData)) {
+        groupData.forEach(subItem => {
+            const slot = processRow(subItem, item);
+            if (slot) slots.push(slot);
+        });
+        return;
+    }
+
+    // Case B: The group is a Single Group (Object)
+    if (groupData && typeof groupData === 'object') {
+        const slot = processRow(groupData, item);
+        if (slot) slots.push(slot);
+        return;
+    }
+
+    // Case C: Fields are directly on the root item (Fallback)
+    const rootSlot = processRow(item, item);
+    if (rootSlot) {
+        slots.push(rootSlot);
+        return;
+    }
+    
+    // Case D: Try to find fields in ANY g_ keys (Generic Fallback)
+    const keys = Object.keys(item);
+    for (const key of keys) {
         if (key.startsWith('g_') && typeof item[key] === 'object' && item[key] !== null) {
-          if (item[key][fieldName]) return item[key][fieldName];
+             // If it's an array (repeating generic)
+             if (Array.isArray(item[key])) {
+                 item[key].forEach((subItem: any) => {
+                     const slot = processRow(subItem, item);
+                     if (slot) slots.push(slot);
+                 });
+             } else {
+                 // Single generic
+                 const slot = processRow(item[key], item);
+                 if (slot) slots.push(slot);
+             }
         }
-      }
-      return null;
-    };
+    }
+  });
 
-    const rawStart = findField(ORIGAMI_CONFIG.fields.start);
-    const rawEnd = findField(ORIGAMI_CONFIG.fields.end);
-
-    // Parse Dates
-    // Origami often uses Unix Timestamps in seconds. React uses milliseconds.
-    const parseTime = (val: any): number => {
-      if (!val) return 0;
-      // If string looks like a number
-      if (!isNaN(Number(val))) {
-        let num = Number(val);
-        // Heuristic: If timestamp is small (seconds), convert to ms
-        if (num < 10000000000) {
-            num = num * 1000;
-        }
-        return num;
-      }
-      // Try date string
-      const d = new Date(val);
-      return d.getTime();
-    };
-
-    const startTime = parseTime(rawStart);
-    const endTime = parseTime(rawEnd);
-
-    return {
-      id: item._id || item.id || Math.random().toString(),
-      startTime,
-      endTime,
-      title: 'פגישה', // Default title
-      originalData: item
-    };
-  }).filter(s => s.startTime > 0 && s.endTime > 0);
+  return slots;
 };
 
-// --- Date Helpers ---
+// --- Helpers ---
+
+// Parses Dates/Times from Origami (Unix Timestamp or String)
+const parseTime = (val: any): number => {
+  if (!val) return 0;
+  // If string looks like a number
+  if (!isNaN(Number(val))) {
+    let num = Number(val);
+    // Heuristic: If timestamp is small (seconds), convert to ms
+    // Origami usually sends seconds for Unix timestamps
+    if (num < 10000000000) {
+        num = num * 1000;
+    }
+    return num;
+  }
+  // Try date string
+  const d = new Date(val);
+  return d.getTime();
+};
 
 export const getDaysInMonth = (year: number, month: number): Date[] => {
   const date = new Date(year, month, 1);
