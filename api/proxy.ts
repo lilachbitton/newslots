@@ -16,10 +16,11 @@ export default async function handler(request: Request) {
     // Use the Origami Endpoint
     const origamiApiUrl = 'https://mganim.origami.ms/entities/api/instance_data/format/json';
     
-    // Credentials: Use Env vars if available, otherwise use the hardcoded token provided by the user
-    const origamiUsername = process.env.ORIGAMI_USERNAME || 'api'; 
-    // Updated with the new token
-    const origamiApiSecret = process.env.ORIGAMI_API_SECRET || process.env.ORIGAMI_API_KEY || 'OGMI-NJKzZTViMmNLYTB-KMTctMZI5MzQ5OT-E0MDMWNzU5NJY5M-2U1YJJJZWEwZDYY-LTA0NDY2NTkZ';
+    // Credentials: Use Env vars if available, otherwise use the specific credentials provided
+    const origamiUsername = process.env.ORIGAMI_USERNAME || 'bestjeansil@gmail.com'; 
+    
+    // Updated with the new token provided
+    const origamiApiSecret = process.env.ORIGAMI_API_SECRET || process.env.ORIGAMI_API_KEY || 'OGMI-NjkZZTczMJDKNJG-0MjCtNTM5NzI2OD-c4MjAwOTUxNJY5M-2U3MzI3ZDY4NDkZ-LTC3NDQzMjcw';
 
     if (!origamiApiSecret) {
       console.error('Origami API credentials are not set.');
