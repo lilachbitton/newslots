@@ -53,7 +53,6 @@ const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           entity_data_name: ORIGAMI_CONFIG.dataName,
-          // We assume we want all templates. Pagination might be needed if there are many.
         }),
       });
 
@@ -70,21 +69,30 @@ const App: React.FC = () => {
       
       const rawData = await response.json();
       
+      // DEBUG: Log the raw data to console so we can see the structure
+      console.log('--- ORIGAMI RAW DATA ---');
+      console.log(rawData);
+      if (rawData.instanceList && rawData.instanceList.length > 0) {
+          console.log('Sample Item Keys:', Object.keys(rawData.instanceList[0]));
+          console.log('Searching for:', ORIGAMI_CONFIG.fields);
+      }
+      console.log('------------------------');
+
       if (rawData.error) {
-          // Handle object errors safely
           let msg = rawData.error;
           if (typeof rawData.error === 'object') {
-              // Prefer 'message' field from Origami error objects
               msg = rawData.error.message || JSON.stringify(rawData.error);
           }
           throw new Error(msg);
       }
       
       const parsedTemplates = parseOrigamiTemplates(rawData);
+      console.log('Parsed Templates:', parsedTemplates);
+      
       setTemplates(parsedTemplates);
       
       if (parsedTemplates.length === 0) {
-          console.warn('No templates found. Check ORIGAMI_CONFIG matches your entity structure.');
+          console.warn('No templates found. Please check the Console for the "ORIGAMI RAW DATA" log and verify field names.');
       }
       
     } catch (err: any) {

@@ -3,7 +3,7 @@ import { OrigamiSlot, SlotTemplate } from './types';
 // Constants for Origami Fields
 export const ORIGAMI_CONFIG = {
   dataName: 'e_90',    // The main entity
-  groupName: 'g_256',  // The field group
+  // groupName: 'g_256', // Removed hard dependency on specific group to be safer
   fields: {
     start: 'fld_1544', // Start time
     end: 'fld_1545',   // End time
@@ -15,7 +15,7 @@ export const ORIGAMI_CONFIG = {
  * Handles: Unix timestamps, ISO strings, "HH:mm" strings.
  */
 const extractTime = (val: any): { hour: number; minute: number } | null => {
-  if (!val) return null;
+  if (val === undefined || val === null || val === '') return null;
 
   // Case 1: "HH:mm" string
   if (typeof val === 'string' && /^\d{1,2}:\d{2}$/.test(val)) {
@@ -25,10 +25,11 @@ const extractTime = (val: any): { hour: number; minute: number } | null => {
 
   // Case 2: Timestamp or Date object
   let dateObj: Date | null = null;
+  
+  // Check if it's a pure number or a numeric string
   if (!isNaN(Number(val))) {
-    // If it's a small number (seconds), convert to ms, otherwise use as ms
-    // Heuristic: Unix timestamp in seconds is usually < 10000000000 (valid until year 2286)
     let ms = Number(val);
+    // Heuristic: Unix timestamp in seconds is usually < 10000000000 (valid until year 2286)
     if (ms < 10000000000) ms *= 1000;
     dateObj = new Date(ms);
   } else {
@@ -39,10 +40,8 @@ const extractTime = (val: any): { hour: number; minute: number } | null => {
     }
   }
 
-  if (dateObj) {
-    // Adjust for timezone offset if necessary, but usually getHours() matches local time
-    // If Origami sends UTC timestamps for "08:00", we might need to be careful.
-    // For now, assuming standard Date object behavior works for the user's locale.
+  if (dateObj && !isNaN(dateObj.getTime())) {
+    // We only care about the hours/minutes for the template
     return { hour: dateObj.getHours(), minute: dateObj.getMinutes() };
   }
 
@@ -51,64 +50,77 @@ const extractTime = (val: any): { hour: number; minute: number } | null => {
 
 /**
  * Parses raw Origami data into "Slot Templates".
- * These are time ranges (e.g. 08:00-09:00) without a specific date.
+ * Searches for start/end fields at the root of the item or within groups.
  */
 export const parseOrigamiTemplates = (data: any): SlotTemplate[] => {
   let list = data;
 
   // Handle common Origami response wrappers
-  if (!Array.isArray(data) && data && Array.isArray(data.instanceList)) {
-      list = data.instanceList;
+  if (!Array.isArray(data) && data) {
+      if (Array.isArray(data.instanceList)) {
+          list = data.instanceList;
+      } else if (Array.isArray(data.data)) {
+          list = data.data;
+      }
   }
 
-  if (!Array.isArray(list)) return [];
+  if (!Array.isArray(list)) {
+      console.warn("Parsed data is not an array:", list);
+      return [];
+  }
 
   const templates: SlotTemplate[] = [];
 
-  list.forEach((item) => {
-    // Look for the group defined in config
-    const groupData = item[ORIGAMI_CONFIG.groupName];
+  list.forEach((item, index) => {
+    // Helper to extract fields from a specific object
+    const extractFromObject = (obj: any, sourceName: string): SlotTemplate | null => {
+        const rawStart = obj[ORIGAMI_CONFIG.fields.start];
+        const rawEnd = obj[ORIGAMI_CONFIG.fields.end];
 
-    // Helper to process a single data object (row)
-    const processRow = (row: any, parentItem: any): SlotTemplate | null => {
-        const rawStart = row[ORIGAMI_CONFIG.fields.start];
-        const rawEnd = row[ORIGAMI_CONFIG.fields.end];
+        if (!rawStart && !rawEnd) return null;
 
         const startTime = extractTime(rawStart);
         const endTime = extractTime(rawEnd);
 
-        if (!startTime || !endTime) return null;
+        if (!startTime || !endTime) {
+            console.warn(`Found fields in ${sourceName} but failed to parse time. Start: ${rawStart}, End: ${rawEnd}`);
+            return null;
+        }
 
         return {
-          id: row._id || row.id || Math.random().toString(36).substr(2, 9),
-          title: row.title || 'פגישה', 
+          id: obj._id || obj.id || `${index}-${sourceName}-${Math.random()}`,
+          title: obj.title || obj.fld_title || 'סלוט פנוי', // Can be customized if title field provided
           start: startTime,
           end: endTime
         };
     };
 
-    // Case A: Group is Array (Repeating Group)
-    if (Array.isArray(groupData)) {
-        groupData.forEach(subItem => {
-            const tmpl = processRow(subItem, item);
-            if (tmpl) templates.push(tmpl);
-        });
-        return;
+    // 1. Try finding fields at the ROOT of the item
+    const rootTemplate = extractFromObject(item, 'root');
+    if (rootTemplate) {
+        templates.push(rootTemplate);
     }
 
-    // Case B: Group is Object (Single Group)
-    if (groupData && typeof groupData === 'object') {
-        const tmpl = processRow(groupData, item);
-        if (tmpl) templates.push(tmpl);
-        return;
-    }
-
-    // Case C: Fallback to root or generic search
-    // (If the structure is flatter than expected)
-    const rootTmpl = processRow(item, item);
-    if (rootTmpl) {
-        templates.push(rootTmpl);
-    }
+    // 2. Iterate over all keys to find potential groups (keys starting with 'g_')
+    //    Only do this if we suspect data is hidden in groups
+    Object.keys(item).forEach(key => {
+        if (key.startsWith('g_')) {
+            const groupVal = item[key];
+            
+            // If group is an Array (Repeating Group)
+            if (Array.isArray(groupVal)) {
+                groupVal.forEach((subItem, subIdx) => {
+                    const subTemplate = extractFromObject(subItem, `${key}[${subIdx}]`);
+                    if (subTemplate) templates.push(subTemplate);
+                });
+            } 
+            // If group is an Object
+            else if (groupVal && typeof groupVal === 'object') {
+                const subTemplate = extractFromObject(groupVal, key);
+                if (subTemplate) templates.push(subTemplate);
+            }
+        }
+    });
   });
 
   return templates;
@@ -126,7 +138,7 @@ export const generateSlotsForRange = (
   const slots: OrigamiSlot[] = [];
   const loopDate = new Date(startDate);
   
-  // Normalize loop date to start of day to avoid partial day skips
+  // Normalize loop date to start of day
   loopDate.setHours(0,0,0,0);
   
   const endLimit = new Date(endDate);
@@ -140,13 +152,13 @@ export const generateSlotsForRange = (
       const slotEnd = new Date(loopDate);
       slotEnd.setHours(tmpl.end.hour, tmpl.end.minute, 0, 0);
 
-      // Handle overnight slots (end time < start time implies next day)
+      // Handle overnight slots
       if (slotEnd < slotStart) {
         slotEnd.setDate(slotEnd.getDate() + 1);
       }
 
       slots.push({
-        id: `${tmpl.id}-${loopDate.getTime()}`, // Unique ID per day
+        id: `${tmpl.id}-${loopDate.getTime()}`, 
         startTime: slotStart.getTime(),
         endTime: slotEnd.getTime(),
         title: tmpl.title,
@@ -161,7 +173,7 @@ export const generateSlotsForRange = (
   return slots;
 };
 
-// --- Date Helpers ---
+// --- Date Helpers --- (unchanged but required for file integrity)
 
 export const getDaysInMonth = (year: number, month: number): Date[] => {
   const date = new Date(year, month, 1);
@@ -175,7 +187,7 @@ export const getDaysInMonth = (year: number, month: number): Date[] => {
 
 export const getStartOfWeek = (date: Date): Date => {
   const d = new Date(date);
-  const day = d.getDay(); // 0 (Sun) to 6 (Sat)
+  const day = d.getDay(); 
   const diff = d.getDate() - day;
   return new Date(d.setDate(diff));
 };
