@@ -1,0 +1,5 @@
+{
+  "name": "Origami Calendar",
+  "description": "A responsive meeting calendar integrated with Origami slots.",
+  "requestFramePermissions": []
+}
