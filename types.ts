@@ -15,6 +15,14 @@ export interface CalendarEvent {
   end: Date;
 }
 
+// Structure for a daily repeating slot template
+export interface SlotTemplate {
+  id: string;
+  title: string;
+  start: { hour: number; minute: number };
+  end: { hour: number; minute: number };
+}
+
 // Helper interface for Origami API response structure
 export interface OrigamiResponseItem {
   _id: string;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ViewType, OrigamiSlot } from './types';
-import { ORIGAMI_CONFIG, parseOrigamiData, addDays } from './utils';
+import { ViewType, OrigamiSlot, SlotTemplate } from './types';
+import { ORIGAMI_CONFIG, parseOrigamiTemplates, generateSlotsForRange, addDays, getStartOfWeek, getDaysInMonth } from './utils';
 import ViewControls from './components/ViewControls';
 import MonthView from './components/MonthView';
 import WeekView from './components/WeekView';
@@ -9,15 +9,40 @@ import DayView from './components/DayView';
 const App: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<ViewType>('week');
+  const [templates, setTemplates] = useState<SlotTemplate[]>([]);
   const [events, setEvents] = useState<OrigamiSlot[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 1. Fetch Templates once on mount
   useEffect(() => {
-    fetchData();
+    fetchTemplates();
   }, []);
 
-  const fetchData = async () => {
+  // 2. Generate Events whenever templates, current date, or view changes
+  useEffect(() => {
+    if (templates.length === 0) return;
+
+    let start: Date, end: Date;
+
+    if (view === 'day') {
+      start = new Date(currentDate);
+      end = new Date(currentDate);
+    } else if (view === 'week') {
+      start = getStartOfWeek(currentDate);
+      end = addDays(start, 6);
+    } else { // month
+      const days = getDaysInMonth(currentDate.getFullYear(), currentDate.getMonth());
+      start = days[0];
+      end = days[days.length - 1];
+    }
+
+    const generated = generateSlotsForRange(templates, start, end);
+    setEvents(generated);
+
+  }, [templates, currentDate, view]);
+
+  const fetchTemplates = async () => {
     setLoading(true);
     setError(null);
     try {
@@ -26,22 +51,35 @@ const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           entity_data_name: ORIGAMI_CONFIG.dataName,
-          normalized: 1,
-          // You can add filtering params here if Origami supports filtering by date range to optimize
+          // We assume we want all templates. Pagination might be needed if there are many.
         }),
       });
 
-      if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+      if (!response.ok) {
+         const txt = await response.text();
+         throw new Error(`API Error ${response.status}: ${txt}`);
+      }
       
       const rawData = await response.json();
-      if (rawData.error) throw new Error(rawData.error);
       
-      const parsedSlots = parseOrigamiData(rawData);
-      setEvents(parsedSlots);
+      if (rawData.error) {
+          // Handle object errors safely
+          const msg = typeof rawData.error === 'object' 
+            ? JSON.stringify(rawData.error) 
+            : rawData.error;
+          throw new Error(msg);
+      }
+      
+      const parsedTemplates = parseOrigamiTemplates(rawData);
+      setTemplates(parsedTemplates);
+      
+      if (parsedTemplates.length === 0) {
+          console.warn('No templates found. Check ORIGAMI_CONFIG matches your entity structure.');
+      }
       
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Failed to load schedule');
+      setError(err.message || 'Failed to load schedule templates');
     } finally {
       setLoading(false);
     }
@@ -97,12 +135,12 @@ const App: React.FC = () => {
         />
 
         {error && (
-            <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-4 border border-red-200">
-                שגיאה בטעינת הנתונים: {error}
+            <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-4 border border-red-200 text-right">
+                <strong>שגיאה בטעינת הנתונים:</strong> {error}
             </div>
         )}
 
-        {loading ? (
+        {loading && templates.length === 0 ? (
           <div className="flex justify-center items-center h-64 bg-white rounded-xl shadow-sm">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
           </div>
